@@ -728,16 +728,34 @@ touch .dockerignore
 
 ```python
 from pydantic_settings import BaseSettings
+from pydantic import Field
+import os
 
 class Settings(BaseSettings):
-    # TODO: Define all config
-    # - PORT
-    # - REDIS_URL
-    # - AGENT_API_KEY
-    # - LOG_LEVEL
-    # - RATE_LIMIT_PER_MINUTE
-    # - MONTHLY_BUDGET_USD
-    pass
+    # Server
+    host: str = Field(default="0.0.0.0", env="HOST")
+    port: int = Field(default=8000, env="PORT")
+    environment: str = Field(default="production", env="ENVIRONMENT")
+    debug: bool = Field(default=False, env="DEBUG")
+
+    # App
+    app_name: str = Field(default="Production AI Agent", env="APP_NAME")
+    app_version: str = Field(default="1.0.0", env="APP_VERSION")
+
+    # LLM
+    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+    llm_model: str = Field(default="gpt-4o-mini", env="LLM_MODEL")
+
+    # Security
+    agent_api_key: str = Field(default="dev-key-change-me-in-production", env="AGENT_API_KEY")
+    allowed_origins: list = Field(default=["*"], env="ALLOWED_ORIGINS")
+
+    # Rate limiting & Budget
+    rate_limit_per_minute: int = Field(default=20, env="RATE_LIMIT_PER_MINUTE")
+    daily_budget_usd: float = Field(default=5.0, env="DAILY_BUDGET_USD")
+
+    # Storage
+    redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
 
 settings = Settings()
 ```
@@ -747,37 +765,89 @@ settings = Settings()
 **File:** `app/main.py`
 
 ```python
-from fastapi import FastAPI, Depends, HTTPException
+import os
+import time
+import json
+import logging
+from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Depends, HTTPException, Request, Security
+from pydantic import BaseModel, Field
 from .config import settings
 from .auth import verify_api_key
 from .rate_limiter import check_rate_limit
 from .cost_guard import check_budget
+from utils.mock_llm import ask as llm_ask
 
-app = FastAPI()
+logger = logging.getLogger(__name__)
+START_TIME = time.time()
+_is_ready = False
+
+class AskRequest(BaseModel):
+    user_id: str | None = Field(default=None, description="Optional user ID for tracking")
+    question: str = Field(..., min_length=1, max_length=2000)
+
+class AskResponse(BaseModel):
+    question: str
+    answer: str
+    model: str
+    timestamp: str
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _is_ready
+    logger.info("Starting production agent...")
+    _is_ready = True
+    yield
+    _is_ready = False
+    logger.info("Shutting down production agent...")
+
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
 @app.get("/health")
 def health():
-    # TODO
-    pass
+    return {"status": "ok", "uptime_seconds": round(time.time() - START_TIME, 1)}
 
 @app.get("/ready")
 def ready():
-    # TODO: Check Redis connection
-    pass
+    # Thực hiện ping kiểm tra Redis kết nối
+    from .rate_limiter import r
+    if r:
+        try:
+            r.ping()
+        except Exception:
+            raise HTTPException(status_code=503, detail="Redis connection failed")
+    if not _is_ready:
+        raise HTTPException(status_code=503, detail="Agent is not ready")
+    return {"ready": True}
 
-@app.post("/ask")
-def ask(
-    question: str,
-    user_id: str = Depends(verify_api_key),
-    _rate_limit: None = Depends(check_rate_limit),
-    _budget: None = Depends(check_budget)
+@app.post("/ask", response_model=AskResponse)
+async def ask(
+    body: AskRequest,
+    _key: str = Depends(verify_api_key),
 ):
-    # TODO: 
-    # 1. Get conversation history from Redis
-    # 2. Call LLM
-    # 3. Save to Redis
-    # 4. Return response
-    pass
+    user_key = body.user_id or _key[:8]
+    
+    # Rate Limiting
+    check_rate_limit(user_key)
+    
+    # Budget Check (Input)
+    input_tokens = len(body.question.split()) * 2
+    check_budget(user_key, (input_tokens / 1000) * 0.00015)
+    
+    # Process question
+    answer = llm_ask(body.question)
+    
+    # Budget Record (Output)
+    output_tokens = len(answer.split()) * 2
+    check_budget(user_key, (output_tokens / 1000) * 0.0006)
+    
+    return AskResponse(
+        question=body.question,
+        answer=answer,
+        model=settings.llm_model,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
 ```
 
 #### Step 4: Authentication (5 phút)
@@ -785,13 +855,19 @@ def ask(
 **File:** `app/auth.py`
 
 ```python
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Security
+from fastapi.security.api_key import APIKeyHeader
+from .config import settings
 
-def verify_api_key(x_api_key: str = Header(...)):
-    # TODO: Verify against settings.AGENT_API_KEY
-    # Return user_id if valid
-    # Raise HTTPException(401) if invalid
-    pass
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+def verify_api_key(x_api_key: str = Security(api_key_header)) -> str:
+    if not x_api_key or x_api_key != settings.agent_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key. Include header: X-API-Key: <key>",
+        )
+    return x_api_key
 ```
 
 #### Step 5: Rate limiting (10 phút)
@@ -799,15 +875,35 @@ def verify_api_key(x_api_key: str = Header(...)):
 **File:** `app/rate_limiter.py`
 
 ```python
+import time
 import redis
 from fastapi import HTTPException
+from .config import settings
 
-r = redis.from_url(settings.REDIS_URL)
+# Khởi tạo Redis client
+r = redis.from_url(settings.redis_url, decode_responses=True) if settings.redis_url else None
 
 def check_rate_limit(user_id: str):
-    # TODO: Implement sliding window
-    # Raise HTTPException(429) if exceeded
-    pass
+    if not r:
+        return # Skip nếu không có Redis
+    
+    now = time.time()
+    redis_key = f"rate_limit:{user_id}"
+    try:
+        r.zremrangebyscore(redis_key, 0, now - 60)
+        count = r.zcard(redis_key)
+        if count >= settings.rate_limit_per_minute:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded: {settings.rate_limit_per_minute} req/min",
+            )
+        member = f"{now}:{time.time_ns()}"
+        r.zadd(redis_key, {member: now})
+        r.expire(redis_key, 65)
+    except HTTPException:
+        raise
+    except Exception:
+        pass # Dự phòng lỗi kết nối Redis
 ```
 
 #### Step 6: Cost guard (10 phút)
@@ -815,27 +911,87 @@ def check_rate_limit(user_id: str):
 **File:** `app/cost_guard.py`
 
 ```python
-def check_budget(user_id: str):
-    # TODO: Check monthly spending
-    # Raise HTTPException(402) if exceeded
-    pass
+import time
+from fastapi import HTTPException
+from .config import settings
+from .rate_limiter import r
+
+def check_budget(user_id: str, estimated_cost: float):
+    if not r:
+        return
+        
+    today = time.strftime("%Y-%m-%d")
+    redis_key = f"budget:{user_id}:{today}"
+    try:
+        current_cost = float(r.get(redis_key) or 0.0)
+        if current_cost + estimated_cost > settings.daily_budget_usd:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Daily budget exceeded: {settings.daily_budget_usd} USD"
+            )
+        if estimated_cost > 0:
+            r.incrbyfloat(redis_key, estimated_cost)
+            r.expire(redis_key, 172800) # 2 days TTL
+    except HTTPException:
+        raise
+    except Exception:
+        pass
 ```
 
 #### Step 7: Dockerfile (5 phút)
 
 ```dockerfile
-# TODO: Multi-stage build
 # Stage 1: Builder
+FROM python:3.11-slim AS builder
+WORKDIR /build
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
 # Stage 2: Runtime
+FROM python:3.11-slim AS runtime
+RUN groupadd -r agent && useradd -r -g agent agent
+WORKDIR /app
+COPY --chown=agent:agent --from=builder /root/.local /home/agent/.local
+COPY app/ ./app/
+COPY utils/ ./utils/
+RUN chown -R agent:agent /app
+USER agent
+ENV PATH=/home/agent/.local/bin:$PATH
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 ```
 
 #### Step 8: Docker Compose (5 phút)
 
 ```yaml
-# TODO: Define services
-# - agent (scale to 3)
-# - redis
-# - nginx (load balancer)
+version: "3.9"
+services:
+  agent:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=staging
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 ```
 
 #### Step 9: Test locally (5 phút)

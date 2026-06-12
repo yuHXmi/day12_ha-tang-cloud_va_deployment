@@ -1,0 +1,20 @@
+# environment variables
+.env
+.env.*
+!.env.example
+
+# python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# virtual environment
+venv/
+.venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+.DS_Store
