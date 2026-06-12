@@ -293,6 +293,9 @@ cd ../render
 7. Deploy!
 
 **Nhiệm vụ:** So sánh `render.yaml` với `railway.toml`. Khác nhau gì?
+* **Khác biệt chính:**
+  * `railway.toml` là file cấu hình cục bộ của Railway, chủ yếu định nghĩa lệnh khởi chạy (`startCommand`) và cấu hình liveness probe / restart policy. Việc cấu hình hạ tầng (như thêm cơ sở dữ liệu Redis, Postgres) thường được thực hiện trực quan trên giao diện Railway Dashboard.
+  * `render.yaml` là file đặc tả Blueprint (Infrastructure as Code - IaC) của Render. Nó cho phép định nghĩa toàn bộ hạ tầng (gồm Web Service, Database Redis, biến môi trường, ổ đĩa mount Disk,...) trực tiếp trong một file YAML duy nhất. Khi đồng bộ với Git, Render sẽ tự động khởi tạo toàn bộ các tài nguyên này.
 
 ###  Exercise 3.3: (Optional) GCP Cloud Run (15 phút)
 
@@ -331,9 +334,13 @@ cd ../../04-api-gateway/develop
 ```
 
 **Nhiệm vụ:** Đọc `app.py` và tìm:
-- API key được check ở đâu?
-- Điều gì xảy ra nếu sai key?
-- Làm sao rotate key?
+1. **API key được check ở đâu?**
+   * Được kiểm tra trong Dependency Function `verify_api_key` bằng cách lấy giá trị từ HTTP Header `X-API-Key` (thông qua đối tượng `APIKeyHeader`).
+2. **Điều gì xảy ra nếu sai key?**
+   * Nếu thiếu API key trong header, hệ thống trả về mã lỗi `401 Unauthorized` kèm chi tiết *"Missing API key..."*.
+   * Nếu gửi sai API key, hệ thống trả về mã lỗi `403 Forbidden` kèm chi tiết *"Invalid API key."*.
+3. **Làm sao rotate key?**
+   * Rotate key bằng cách cập nhật giá trị của biến môi trường `AGENT_API_KEY` trên hệ thống Cloud (Railway/Render) mà không cần thay đổi hay build lại mã nguồn. Container sẽ tự động nhận key mới sau khi restart.
 
 Test:
 ```bash
@@ -380,9 +387,13 @@ curl http://localhost:8000/ask -X POST \
 ###  Exercise 4.3: Rate limiting
 
 **Nhiệm vụ:** Đọc `rate_limiter.py` và trả lời:
-- Algorithm nào được dùng? (Token bucket? Sliding window?)
-- Limit là bao nhiêu requests/minute?
-- Làm sao bypass limit cho admin?
+1. **Algorithm nào được dùng? (Token bucket? Sliding window?)**
+   * Thuật toán **Sliding Window Counter** được sử dụng. Nó sử dụng một hàng đợi double-ended queue (`deque`) để lưu trữ dấu thời gian (timestamps) của các request và liên tục loại bỏ các timestamps nằm ngoài cửa sổ thời gian (window) quy định.
+2. **Limit là bao nhiêu requests/minute?**
+   * Với user thường (`rate_limiter_user`): Giới hạn là **10 requests/minute**.
+   * Với tài khoản admin (`rate_limiter_admin`): Giới hạn là **100 requests/minute**.
+3. **Làm sao bypass limit cho admin?**
+   * Dựa trên thông tin giải mã từ token JWT, hệ thống kiểm tra vai trò (role) của người dùng. Nếu role là `"admin"`, hệ thống sẽ sử dụng bộ giới hạn dành riêng cho admin (`rate_limiter_admin`) với hạn mức cao hơn (100 req/min), từ đó nâng cao hạn mức hoặc bypass giới hạn chặt của user thường.
 
 Test:
 ```bash
@@ -519,12 +530,25 @@ import sys
 
 def shutdown_handler(signum, frame):
     """Handle SIGTERM from container orchestrator"""
-    # TODO:
+    global _is_ready
+    logger.info(f"Received signal {signum} — starting graceful shutdown...")
     # 1. Stop accepting new requests
-    # 2. Finish current requests
+    _is_ready = False
+    
+    # 2. Finish current requests (in-flight requests)
+    timeout = 30
+    elapsed = 0
+    while _in_flight_requests > 0 and elapsed < timeout:
+        logger.info(f"Waiting for {_in_flight_requests} requests to complete...")
+        time.sleep(1)
+        elapsed += 1
+        
     # 3. Close connections
+    # db.close()
+    
     # 4. Exit
-    pass
+    logger.info("Graceful shutdown complete. Exiting...")
+    sys.exit(0)
 
 signal.signal(signal.SIGTERM, shutdown_handler)
 ```
