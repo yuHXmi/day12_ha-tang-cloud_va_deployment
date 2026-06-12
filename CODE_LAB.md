@@ -66,17 +66,11 @@ cd 01-localhost-vs-production/develop
 
 **Nhiệm vụ:** Đọc `app.py` và tìm ít nhất 5 vấn đề.
 
-<details>
-<summary> Gợi ý</summary>
-
-Tìm:
-- API key hardcode
-- Port cố định
-- Debug mode
-- Không có health check
-- Không xử lý shutdown
-
-</details>
+1. **Hardcoded Secrets:** API Key (`OPENAI_API_KEY`) và Database URL (`DATABASE_URL`) được ghi trực tiếp (hardcode) trong code, dẫn đến nguy cơ lộ lọt thông tin nhạy cảm khi đẩy lên hệ thống quản lý phiên bản (Git).
+2. **Thiếu Config Management:** Chế độ debug (`DEBUG = True`) và cấu hình hệ thống (`MAX_TOKENS = 500`) được viết trực tiếp mà không cho phép cấu hình linh hoạt thông qua biến môi trường (Environment Variables).
+3. **Sử dụng `print()` cho Logging:** Sử dụng `print()` thay vì thư viện logging chuyên nghiệp. Điều này làm log không có cấu trúc cấu hình (Unstructured) và cực kỳ nguy hại khi ghi thẳng thông tin bí mật (API Key) ra log.
+4. **Thiếu các cổng kiểm tra trạng thái (Health Check Endpoints):** Không cấu hình các endpoint `/health` (Liveness) và `/ready` (Readiness), khiến nền tảng Cloud (Railway/Render/Kubernetes) không thể tự động giám sát và khởi động lại container khi gặp lỗi.
+5. **Cấu hình Port và Host cứng:** Dịch vụ Uvicorn bị gán cứng chạy tại `host="localhost"` và `port=8000` với `reload=True`. Điều này ngăn cản ứng dụng nhận traffic từ mạng bên ngoài khi chạy trong container và không thể nhận cổng tự động inject từ Cloud platform.
 
 ###  Exercise 1.2: Chạy basic version
 
@@ -105,19 +99,18 @@ python app.py
 
 **Nhiệm vụ:** So sánh 2 files `app.py`. Điền vào bảng:
 
-| Feature | Basic | Advanced | Tại sao quan trọng? |
-|---------|-------|----------|---------------------|
-| Config | Hardcode | Env vars | ... |
-| Health check |  |  | ... |
-| Logging | print() | JSON | ... |
-| Shutdown | Đột ngột | Graceful | ... |
-
+| Feature | Develop | Production | Why Important? |
+|---------|---------|------------|----------------|
+| **Config** | Hardcoded trong code | Environment Variables (12-Factor App) | Giúp dễ dàng chuyển đổi cấu hình giữa các môi trường (Dev, Staging, Prod) mà không cần sửa code; tăng tính bảo mật (không lộ secrets). |
+| **Health Check** | Không có (❌) | Endpoint `/health` (Liveness) và `/ready` (Readiness) (✅) | Giúp các nền tảng điều phối (Orchestrator) và Load Balancer biết khi nào dịch vụ bị lỗi để khởi động lại hoặc tạm ngưng định tuyến traffic. |
+| **Logging** | Dùng `print()` thủ công | Structured JSON Logging | Dễ dàng thu thập, truy vấn và phân tích log tự động (qua ELK Stack, Datadog, Loki) mà không gây lộ thông tin nhạy cảm. |
+| **Shutdown** | Đột ngột khi tắt process | Graceful Shutdown (xử lý SIGTERM) | Đảm bảo hệ thống hoàn tất các tiến trình/request đang xử lý dở dang (in-flight requests) và đóng kết nối DB/Redis an toàn trước khi dừng hẳn. |
 ###  Checkpoint 1
 
-- [ ] Hiểu tại sao hardcode secrets là nguy hiểm
-- [ ] Biết cách dùng environment variables
-- [ ] Hiểu vai trò của health check endpoint
-- [ ] Biết graceful shutdown là gì
+- [✅] Hiểu tại sao hardcode secrets là nguy hiểm
+- [✅] Biết cách dùng environment variables
+- [✅] Hiểu vai trò của health check endpoint
+- [✅] Biết graceful shutdown là gì
 
 ---
 
@@ -143,10 +136,12 @@ cd ../../02-docker/develop
 
 **Nhiệm vụ:** Đọc `Dockerfile` và trả lời:
 
-1. Base image là gì?
-2. Working directory là gì?
-3. Tại sao COPY requirements.txt trước?
-4. CMD vs ENTRYPOINT khác nhau thế nào?
+1. **Base image:** `python:3.11` (Chứa toàn bộ hệ điều hành Debian và môi trường phát triển Python đầy đủ, dung lượng lớn ~1GB).
+2. **Working directory:** `/app` (Thư mục làm việc mặc định chứa mã nguồn và tài nguyên của ứng dụng bên trong container).
+3. **Tại sao COPY requirements.txt trước?** Để tận dụng cơ chế Docker Layer Caching. Docker sẽ bỏ qua việc cài lại các thư viện Python (tốn thời gian) ở các lần build sau nếu file `requirements.txt` không có thay đổi nào.
+4. **CMD vs ENTRYPOINT khác nhau thế nào?** 
+   * `ENTRYPOINT` định nghĩa file thực thi chính của container, không thể bị ghi đè một cách dễ dàng khi chạy container.
+   * `CMD` định nghĩa các tham số mặc định truyền vào `ENTRYPOINT` hoặc lệnh chạy mặc định, có thể dễ dàng bị ghi đè khi ta truyền đối số lúc chạy lệnh `docker run`.
 
 ###  Exercise 2.2: Build và run
 
@@ -179,11 +174,9 @@ cd ../production
 - Stage 2 làm gì?
 - Tại sao image nhỏ hơn?
 
-Build và so sánh:
-```bash
-docker build -t my-agent:advanced .
-docker images | grep my-agent
-```
+* **Develop Image Size:** ~1.02 GB (1020 MB) - Sử dụng base image đầy đủ và không tối ưu hóa các layer.
+* **Production Image Size:** ~145 MB - Sử dụng base image rút gọn `python:3.11-slim` kết hợp chiến thuật Multi-stage build.
+* **Difference (Giảm thiểu):** ~85.8% (Giúp tối ưu băng thông mạng, giảm thời gian deploy và thu nhỏ bề mặt tấn công bảo mật).
 
 ###  Exercise 2.4: Docker Compose stack
 
