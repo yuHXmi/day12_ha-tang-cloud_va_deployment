@@ -1,9 +1,4 @@
-import sys
 import os
-
-# Thêm my-production-agent vào PYTHONPATH để nạp app/main
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "my-production-agent"))
-
 import uvicorn
 from app.main import app
 

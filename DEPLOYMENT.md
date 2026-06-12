@@ -1,7 +1,7 @@
 # Deployment Information
 
 ## Public URL
-https://ai-agent-vinu2026.up.railway.app
+https://perfect-reflection-production-1552.up.railway.app
 
 ## Platform
 Railway
@@ -10,20 +10,20 @@ Railway
 
 ### Health Check
 ```bash
-curl https://ai-agent-vinu2026.up.railway.app/health
+curl https://perfect-reflection-production-1552.up.railway.app/health
 # Expected: {"status": "ok", "version": "1.0.0", "environment": "production", ...}
 ```
 
 ### Readiness Check
 ```bash
-curl https://ai-agent-vinu2026.up.railway.app/ready
+curl https://perfect-reflection-production-1552.up.railway.app/ready
 # Expected: {"ready": true} (or 503 if dependencies fail)
 ```
 
 ### API Test (with authentication)
 ```bash
-curl -X POST https://ai-agent-vinu2026.up.railway.app/ask \
-  -H "X-API-Key: your-secret-key" \
+curl -X POST https://perfect-reflection-production-1552.up.railway.app/ask \
+  -H "X-API-Key: your-production-secret-key" \
   -H "Content-Type: application/json" \
   -d '{"user_id": "test_user", "question": "Hello"}'
 ```
@@ -31,14 +31,14 @@ curl -X POST https://ai-agent-vinu2026.up.railway.app/ask \
 ### Multi-turn Conversation Context Test
 ```bash
 # Turn 1: Introduce name
-curl -X POST https://ai-agent-vinu2026.up.railway.app/ask \
-  -H "X-API-Key: your-secret-key" \
+curl -X POST https://perfect-reflection-production-1552.up.railway.app/ask \
+  -H "X-API-Key: your-production-secret-key" \
   -H "Content-Type: application/json" \
   -d '{"user_id": "user123", "question": "My name is Alice"}'
 
 # Turn 2: Query name
-curl -X POST https://ai-agent-vinu2026.up.railway.app/ask \
-  -H "X-API-Key: your-secret-key" \
+curl -X POST https://perfect-reflection-production-1552.up.railway.app/ask \
+  -H "X-API-Key: your-production-secret-key" \
   -H "Content-Type: application/json" \
   -d '{"user_id": "user123", "question": "What is my name?"}'
 # Expected response: {"question": "What is my name?", "answer": "Your name is Alice.", ...}
@@ -47,8 +47,8 @@ curl -X POST https://ai-agent-vinu2026.up.railway.app/ask \
 ## Environment Variables Set
 - `PORT` = `8000`
 - `ENVIRONMENT` = `production`
-- `REDIS_URL` = `redis://redis:6379/0` (hoặc URL của cloud Redis instance)
-- `AGENT_API_KEY` = `your-secret-key`
+- `REDIS_URL` = `redis://...` (Cloud Redis instance URL)
+- `AGENT_API_KEY` = `your-production-secret-key`
 - `DAILY_BUDGET_USD` = `5.0`
 - `RATE_LIMIT_PER_MINUTE` = `20`
 

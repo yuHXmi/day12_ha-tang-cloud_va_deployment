@@ -50,8 +50,8 @@ Client (Port 80/443) ──> Nginx (Load Balancer & Reverse Proxy)
 ## Part 3: Cloud Deployment
 
 ### Exercise 3.1: Railway deployment
-* **URL:** `https://ai-agent-vinu2026.up.railway.app`
-* **Screenshot:** [ railway_dashboard.png ]
+* **URL:** `https://perfect-reflection-production-1552.up.railway.app`
+* **Screenshot:** [railway_dashboard.png](screenshots/railway_dashboard.png)
 
 ---
 
