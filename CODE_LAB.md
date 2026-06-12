@@ -306,10 +306,10 @@ cd ../production-cloud-run
 
 ###  Checkpoint 3
 
-- [ ] Deploy thành công lên ít nhất 1 platform
-- [ ] Có public URL hoạt động
-- [ ] Hiểu cách set environment variables trên cloud
-- [ ] Biết cách xem logs
+- [✅] Deploy thành công lên ít nhất 1 platform
+- [✅] Có public URL hoạt động
+- [✅] Hiểu cách set environment variables trên cloud
+- [✅] Biết cách xem logs
 
 ---
 
@@ -442,10 +442,10 @@ def check_budget(user_id: str, estimated_cost: float) -> bool:
 
 ###  Checkpoint 4
 
-- [ ] Implement API key authentication
-- [ ] Hiểu JWT flow
-- [ ] Implement rate limiting
-- [ ] Implement cost guard với Redis
+- [✅] Implement API key authentication
+- [✅] Hiểu JWT flow
+- [✅] Implement rate limiting
+- [✅] Implement cost guard với Redis
 
 ---
 
@@ -614,11 +614,11 @@ Script này:
 
 ###  Checkpoint 5
 
-- [ ] Implement health và readiness checks
-- [ ] Implement graceful shutdown
-- [ ] Refactor code thành stateless
-- [ ] Hiểu load balancing với Nginx
-- [ ] Test stateless design
+- [✅] Implement health và readiness checks
+- [✅] Implement graceful shutdown
+- [✅] Refactor code thành stateless
+- [✅] Hiểu load balancing với Nginx
+- [✅] Test stateless design
 
 ---
 
@@ -631,23 +631,23 @@ Build một production-ready AI agent từ đầu, kết hợp TẤT CẢ concep
 ###  Requirements
 
 **Functional:**
-- [ ] Agent trả lời câu hỏi qua REST API
-- [ ] Support conversation history
+- [✅] Agent trả lời câu hỏi qua REST API
+- [✅] Support conversation history
 - [ ] Streaming responses (optional)
 
 **Non-functional:**
-- [ ] Dockerized với multi-stage build
-- [ ] Config từ environment variables
-- [ ] API key authentication
-- [ ] Rate limiting (10 req/min per user)
-- [ ] Cost guard ($10/month per user)
-- [ ] Health check endpoint
-- [ ] Readiness check endpoint
-- [ ] Graceful shutdown
-- [ ] Stateless design (state trong Redis)
-- [ ] Structured JSON logging
-- [ ] Deploy lên Railway hoặc Render
-- [ ] Public URL hoạt động
+- [✅] Dockerized với multi-stage build
+- [✅] Config từ environment variables
+- [✅] API key authentication
+- [✅] Rate limiting (10 req/min per user)
+- [✅] Cost guard ($10/month per user)
+- [✅] Health check endpoint
+- [✅] Readiness check endpoint
+- [✅] Graceful shutdown
+- [✅] Stateless design (state trong Redis)
+- [✅] Structured JSON logging
+- [✅] Deploy lên Railway hoặc Render
+- [✅] Public URL hoạt động
 
 ### 🏗 Architecture
 
